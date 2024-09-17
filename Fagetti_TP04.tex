@@ -1,0 +1,437 @@
+\documentclass{article}
+\usepackage{graphicx} % Required for inserting images
+\usepackage[spanish]{babel}
+\usepackage{multirow}
+
+\title{ Trabajo Práctico \\ 
+    \vspace{15}
+    \textit{Capa de enlace - Switchers administrables} \\
+}
+\author{Nicolás Fagetti}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Spanning Tree Protocol (STP)}
+
+Cuando enviamos el PDU en modo simulación directamente, se muestran 2 mensajes preparados para ser enviados: un mensaje ARP y un mensaje ICMP. 
+El mensaje ARP se envía a toda la red, como vimos en el TP anterior. Observamos que al salir del switch 0, se envía a los otros 2 switches, pero el switch 1 no lo recibe (lo descarta). En cambio, al salir del switch 2 hacia el switch 1, este lo recibe normalmente. Luego, este ultimo lo envía hacia la PC2. Al retornar desde la PC2 a la PC1, el mensaje viajara por el camino recorrido. 
+El mensaje ICMP viajara por las conexiones que reconoció la difusión del ARP.
+Finalmente, desde el switch 2 vemos que se envía un mensaje STP hacia los demás dispositivos. \\
+
+La interfaz en naranja no esta desactivada, pero se encuentra en estado ``bloqueado". \\
+
+A continuación, ingresamos los siguientes comandos: \\\\
+\texttt{    Switch>\vspace{1} enable \\ 
+            Switch\#\vspace{1} show spanning-tree vlan 1 \\ 
+        }
+
+Con ellos, habilitamos el modo supervisor y mostramos la información del árbol generador (spanning tree), la cual resumimos en la siguiente tabla: \\
+
+\begin{tabular}{ | l || c | c | c | c | c | c | c |}
+   \hline
+    &  Interfaz	& Rol &	Estado & MAC Address & Bridge Priority Nr. & sys-id-ext \\
+   \hline
+   \multirow{3}{*}{Switch0} & Fa0/1 & Root	& FWD & \multirow{3}{*}{000A.F30D.B9EE} & \multirow{3}{*}{32768} & 1 \\
+     & Fa0/2	& Desg & FWD & & \\
+     & Fa0/3	& Desg & FWD & & \\
+   \hline
+   \multirow{3}{*}{Switch1} & Fa0/1 & Altn	& BLK & \multirow{3}{*}{0090.2B6C.AD29} & \multirow{3}{*}{32768} & 1 \\
+     & Fa0/2	& Root & FWD & & \\
+     & Fa0/3	& Desg & FWD & & \\
+   \hline
+   \multirow{2}{*}{Switch2} & Fa0/1 & Desg	& FWD & \multirow{2}{*}{0001.C7E4.67A1} & \multirow{2}{*}{32768} & 1 \\
+     & Fa0/2	& Desg & FWD & & \\
+   \hline
+\end{tabular}
+
+De la misma, observamos que en casi todos los switches el estado se encuentra en FWD (forward), excepto en el puerto Fa0/1 del switch 1, que se encuentra en BLK (block). Esto significa que dicho puerto se encuentra temporalmente bloqueado y no forma parte de la ruta de reenvío. Como adelanta la consigna, y según lo visto en la documentación de Cisco, esto lo define el protocolo STP de forma dinámica, para evitar la creación de bucles que transmitan ``tramas saturadas (como difusiones) de switch a switch y alrededor del bucle constantemente". \\
+
+Asimismo, respecto del rol que desempeña cada puerto, observamos que los puertos Fa0/1 del switch 0 y Fa0/2 del switch 1 contienen la etiqueta ``Root", indicando que conectan con el dispositivo que oficia de raíz. El resto de los puertos poseen la etiqueta ``Desg" (designado), excepto el puerto Fa0/1 del switch 1, que posee el rol ``Altn" (alternativo). \\
+
+Luego, verificando las direcciones MAC de cada switch, y teniendo presente la forma en que Cisco determina el Bridge ID (BID) de cada switch, constatamos que el switch 2 es el elegido como Root, dado que posee la dirección MAC mas pequeña (comparando los valores en hexadecimal). \\
+
+A continuación, apagamos la interfaz Fa0/2 del switch 2 (raíz.), utilizando los siguientes comandos: \\\\
+\texttt{
+    Switch2> \vspace{1} enable \\
+    Switch2\# configure terminal  \\
+    Enter configuration commands, one per line.  End with CNTL/Z. \\
+    Switch2(config)\# interface FastEthernet0/2 \\
+    Switch2(config-if)\# shutdown \\
+    Switch2(config-if)\# end \\
+}
+
+Al enviar un nuevo paquete desde la PC1 a la PC2, vemos que el switch 0 lo reenvía a ambos switches (1 y 2), tras lo cual el switch 2 (raíz.) interrumpe el envío del paquete ICMP y envía un paquete STP al switch 0 (a través del único puerto habilitado), el cual lo reenvía al resto de los dispositivos (incluido el switch 1). Este ultimo (el switch 1) lo recibe y reenvía a la PC2. \\
+
+A raíz. de esto, si detenemos la simulación, al pasar al modo Realtime veremos que el puerto Fa/01 del switch 1 pasara a estar del anterior estado BLK al estado FWD, y del rol ``Altn'' al rol ``Root", es decir que ahora conecta al switch 0 en dirección al switch raíz (que sigue siendo el switch 2). \\\\
+
+\begin{tabular}{ | l | c | c | c | c | c | }
+    \hline
+    Interface & Role & Sts & Cost & Prio.Nbr & Type \\
+    \hline
+    Fa0/1 & Root & FWD & 19 & 128.1 & P2p \\
+    Fa0/3 & Desg & FWD & 19 & 128.3 & P2p \\
+    \hline    
+\end{tabular} \\\\
+
+De esta forma, vemos que a través del protocolo STP se reconfiguró la red, redefiniendo las rutas de reenvío. \\
+
+Si ahora apagamos también la otra interface del mismo switch 2, veremos que al enviar un nuevo paquete, el mismo viaja por el único camino posible hacia PC2, y que si verificamos la información del switch 0, este pasara a ser el switch raíz: \\\\
+\texttt{
+        Switch0> \vspace{1} show spanning-tree vlan 1 \\
+	VLAN0001 \\
+	  Spanning tree enabled protocol ieee \\\\
+        \begin{tabular}{ l  l  l }
+        \multirow{4}{*}{Root ID} & Priority \hspace{5} 32769 \\
+                                 & Address \hspace{10} 000A.F30D.B9EE \\
+                                 & This bridge is the root & \\
+                                 & Hello Time 2 sec Max Age 20 sec Forward Delay 15 sec & \\
+        \end{tabular} \\\\
+} \\
+\texttt{        
+        \begin{tabular}{ l  l  l }
+        \multirow{4}{*}{Bridge ID} & Priority \hspace{5} 32769 (priority 32768 sys-id-ext 1) \\
+                                   & Address \hspace{10} 000A.F30D.B9EE \\
+                                   & Hello Time 2 sec Max Age 20 sec Forward Delay 15 sec \\
+                                   & Aging Time  20 \\                                   
+        \end{tabular} \\
+} \\\\
+\texttt{
+    \begin{tabular}{ l  l  l  l  l  l }
+        Interface & Role & Sts & Cost & Prio.Nbr & Type \\
+        \hline
+	Fa0/3 & Desg & FWD & 19 & 128.3 & P2p \\
+	Fa0/2 & Desg & FWD & 19 & 128.2 & P2p \\
+    \end{tabular}
+} \\\\
+
+Entendemos que, al quedar el switch 2 (raíz) virtualmente desconectado de la red, el protocolo STP verifica el estado de la red y reconfigura el rol de raíz al switch 0. Esto resulta así ya que, si comparamos las direcciones MAC de los switches 0 y 1, notamos que el valor (en hexa) del switch 0 resulta menor que el del switch 1, obteniendo así un menor Bridge ID para determinar el switch raíz. \\
+
+Finalmente, utilizamos el comando en el switch 0: \\
+
+\texttt{Switch0(config)# spanning-tree vlan 1 priority 36864} \\\\
+
+Nótese que el numero de prioridad ingresado es mayor que el del switch 1. Esto genera que se reconfigure efectivamente el rol de raíz hacia este switch, que conserva su Bridge Priority Number en 32769. Así, se determina un nuevo valor para su Bridge ID, que resultara menor que el del switch 0. \\
+
+Ahora reseteamos todo y modificamos solo el switch 0 para que sea el switch raíz, utilizando el siguiente comando: \\
+
+\texttt{Switch0(config)# spanning-tree vlan 1 root primary} \\
+
+Si mostramos la información del STP, veremos que el switch 0 ha pasado a ser raíz, y que ademas su Bridge Priority Number ha cambiado a 24576: \\\\
+\texttt{
+        Switch0> \vspace{1} show spanning-tree vlan 1 \\
+	VLAN0001 \\
+	  Spanning tree enabled protocol ieee \\\\
+        \begin{tabular}{ l  l }
+        \multirow{4}{*}{Root ID} & Priority \hspace{5} 24577 \\
+                                 & Address \hspace{10} 000A.F30D.B9EE \\
+                                 & This bridge is the root \\
+                                 & Hello Time 2 sec Max Age 20 sec Forward Delay 15 sec \\
+        \end{tabular} \\\\
+} \\
+\texttt{        
+        \begin{tabular}{ l  l  l }
+        \multirow{4}{*}{Bridge ID} & Priority \hspace{5} 24577 (priority 24576 sys-id-ext 1) \\
+                                   & Address \hspace{10} 000A.F30D.B9EE \\
+                                   & Hello Time 2 sec Max Age 20 sec Forward Delay 15 sec \\
+                                   & Aging Time  20 \\                                   
+        \end{tabular} \\
+} \\\\
+\texttt{
+    \begin{tabular}{ l  l  l  l  l  l }
+        Interface & Role & Sts & Cost & Prio.Nbr & Type \\
+        \hline
+        Fa0/1 & Desg & FWD & 19 & 128.1 & P2p \\
+	Fa0/2 & Desg & FWD & 19 & 128.2 & P2p \\
+	Fa0/3 & Desg & FWD & 19 & 128.3 & P2p \\
+    \end{tabular}
+} \\\\
+
+Esta forma de asignar el rol de raíz al switch es mas precisa, que ya no tenemos que ir modificando el numero de prioridad manualmente para asignar el rol de raíz, sino que lo hace directamente y el protocolo le asigna el nuevo numero. \\
+
+Ademas, el switch 0 es un mejor candidato para ser el switch raíz, ya que al estar mas cerca de un host que el switch 2, todos los broadcast y mensajes pasaran necesariamente por el cuando se envíe o reciba de dicho host. Por lo tanto, ya cumple casi ``naturalmente'' un rol de switch raíz, por lo que es una mejor opción que el switch 2. \\
+
+\subsection{Tormenta de Broadcast}
+
+Al desactivar el STP en todos los switches con el comando indicado, y realizar un nuevo envío de PDU, vemos primeramente que todos los puertos se encuentran activos (en estado FWD). Adicionalmente, al comenzar el envío del PDU, durante el envío del mensaje ARP, los switches entran en un bucle de reenvío. de ARPs entre ellos, saturando la red de estos mensajes y bloqueando el envío del mensaje ICMP.
+
+Al volver al modo Realtime, vemos que todos los dispositivos titilan con mucha mayor frecuencia. Al enviar el ping desde la PC1 a la PC2, vemos el siguiente resultado: \\\\
+\texttt{C:$\backslash$>}
+\texttt{ping 192.168.0.2} \\\\
+\texttt{Pinging 192.168.0.2 with 32 bytes of data:} \\\\
+\texttt{Request timed out.} \\
+\texttt{Request timed out.} \\
+\texttt{Request timed out.} \\
+\texttt{Request timed out.} \\\\
+\texttt{Ping statistics for 192.168.0.2:} \\
+\texttt{Packets: Sent = 4, Received = 0, Lost = 4 (100 \% loss),} \\\\
+
+Como podemos ver, el mensaje no fue enviado con éxito. \\
+
+Si verificamos el estado de la VLAN, veremos que todos los puertos de los switches se encuentran activos. De esta forma, lo que podemos constatar es que la saturación de la red por los mensajes ARP reenviados ciclicamente entre los 3 switches en bucle, sin ningún puerto bloqueado, impide el envío del mensaje entre los hosts. Por lo tanto, el protocolo STP es importante para la configuración de los switches y la acción de auto-aprendizaje que realiza cuando existe algún cambio en la topología de la red. \\
+
+\section{Virtual LANs}
+
+Creamos el escenario propuesto utilizando en cada host el comando ipconfig (como vimos en pasados TPs) con la información de configuración brindada en la consigna: \\
+
+\texttt{> ipconfig 192.168.2.4 255.255.252.0} \\
+
+Al enviar un PDU desde una PC a otra, vemos que se envía la trama ARP hacia el switch, y desde este a todas las otras PCs, ya que, como vimos, los switches amplían el dominio de difusión. Todas las PCs conectadas al mismo switch son consideradas parte de la misma VLAN por defecto. Luego, el mensaje retorna desde la PC destino hacia el switch, y desde este hacia la PC origen, como veníamos observando en experimentos previos. Asimismo, la trama ICMP se envía por esta misma ruta y es recibida exitosamente. A continuación, vemos que el switch envía un mensaje STP hacia todos los equipos, los cuales descartan dicha trama. Esto lo hará algunas veces, tras lo cual, el switch envía una trama DTP (Dynamic Trunking Protocol) hacia algunas de las PC, y así como paquetes CDP (Cisco Discovery Protocol) -ambos protocolos propietarios de Cisco- a todas las PCs. \\
+
+Ahora, reconfiguramos la red creando 2 VLANs nuevas y reasignaremos los puertos del switch a cada una de ellas. Para ello, utilizamos los comandos indicados por la consigna, quedándonos los puertos 1 a 10 asignados a la VLAN 2, y los puertos 11 a 20 asignados a la VLAN 3. \\
+
+Entre los comandos mas importantes para la configuración de los puertos del switch a las VLANs, tenemos: \\
+
+\texttt{\# show vlan} \\
+\textbf{Muestra la VLAN actual en el switch.} \\
+
+\texttt{\# configure terminal} \\
+\textbf{Ya utilizado en TPs anteriores, permite pasar del modo privilegiado EXEC al modo de Configuración Global.} \\
+
+\texttt{(config)\# interface range [interface-id-range] } \\
+\textbf{ Selecciona un rango de interfaces como contexto de configuración.} \\
+
+\texttt{(config-if-range)\# switchport mode access} \\
+\textbf{Ingresa al modo de acceso para los puertos del rango seleccionado.} \\
+
+\texttt{(config-if-range)\# switchport access vlan [vlan-id | none] } \\
+\textbf{ Asigna el acceso del rango de interfaces a la VLAN indicada (o a ninguna).} \\
+
+Al enviar un PDU entre equipos de la misma VLAN, veremos que la trama ARP de difusión se reenvía solamente a las PCs de la misma VLAN. Luego de que el mensaje (y su respuesta) arriben con éxito, el switch comenzara a enviar grupos de mensajes STP para cada una de sus VLANs.
+Esto mismo ocurrirá cuando intentemos enviar un PDU entre equipos de distintas VLANs, con la diferencia de que el mensaje ICMP no arribara a su destino. \\
+
+\subsection{VLAN con mas de un switch}
+
+Al modificar el escenario con 2 switches separados, comprobamos que los mismos se comportan de la misma manera que antes, enviando la difusión solo a las interfaces pertenecientes a la misma red. \\
+
+Si agregamos los cables cross-over entre los switches, luego de unos segundos los puertos conectados pasaran de estado bloqueado a estado FWD. Asimismo, observamos que el switch 1 ha sido asignado como switch raíz, dado que su Bridge ID estará determinado por su dirección MAC (menor que la del switch 0). \\
+
+Al enviar un PDU entre equipos de la misma VLAN (pero conectados a distintos switches), veremos que la difusión se envía a todos los equipos de la misma VLAN a través de ambos switches, y que el mensaje ICMP es enviado con éxito. Luego, el switch 1 (raíz) comenzara a enviar grupos de mensajes STP a cada una de las VLANs a través de ambos switches. \\
+
+\subsection{Port trunking}
+
+Luego de modificar la conexión entre los switches utilizando ahora los puertos GigaEthernet, ingresamos el comando: \\\\
+\texttt{Switch\# show interface gigabitEthernet 0/1 switchport} \\
+
+Entre la información obtenida, extraemos los atributos mencionados en la consigna, cuyos valores actuales son: \\\\
+\texttt{
+        Administrative Mode: dynamic auto \\
+	Operational Mode: static access \\
+	Administrative Trunking Encapsulation: dot1q \\
+	Trunking VLANs Enabled: All \\
+}
+
+Investigando la documentación y algunos foros de Cisco, encontramos que: \\
+
+\begin{itemize}
+    \item \textbf{Administrative Mode}: Indica el modo en el que el puerto del switch ha sido configurado. El valor ``dynamic auto'' implica que la interfaz del puerto se configurara en modo ``trunk'' si del otro lado recibe una solicitud para dicho modo, de lo contrario, se configurara en modo de acceso (negociación dinámica de modo).
+    \item \textbf{Operational Mode}: Indica el modo en el que el puerto se comporta en respuesta a la configuración efectivamente realizada en otro switch. Si su estado es ``static access'', significa que por dicha interfaz puede conectarse una única VLAN.
+    \item \textbf{Administrative Trunking Encapsulation}: Indica el tipo de encapsulamiento para la interfaz trunk determinada. El valor \texttt{dot1q} es el tipo por defecto, frente al tipo \texttt{ISL}, mas antiguo y en desuso.
+    \item \textbf{Trunking VLANs Enabled}: Indica cuales VLANs están habilitadas en el enlace troncal (trunk). Si esta en \texttt{ALL} indica que todas las VLANs lo están.
+\end{itemize}
+
+Al probar el envío de PDUs entre computadoras de la misma VLAN pero conectadas a distintos switches, verificamos que volvemos al escenario de los switches desconectados. No hay comunicación entre hosts de la misma VLAN y distintos switches. \\
+
+Ahora, al introducir el comando: \\\\
+\texttt{
+        Switch(config)\# interface gigabitEthernet 0/1 \\
+	Switch(config-if)\# switchport mode dynamic desirable
+} \\
+
+Veremos que se inicia un bloqueo momentáneo de las interfaces que conectan a ambos switches, tras lo cual vuelven a habilitarse. Al ingresar nuevamente el comando \texttt{show interface gigaBitEthernet 0/1 switchport}, veremos que el valor de los atributos antes observados ha cambiado: \\\\
+\texttt{
+    Administrative Mode: dynamic desirable \\
+    Operational Mode: trunk \\
+    Administrative Trunking Encapsulation: dot1q \\
+}
+
+Si enviamos un PDU entre hosts de la misma VLAN, pero conectadas a distintos switches, veremos que la difusión. se transmite a través de los switches y los mensajes llegan exitosamente. Asimismo, al visualizar la trama Ethernet del ICMP enviado desde la PC a través del switch 0, notamos que, a diferencia de la trama entrante, la trama saliente agrega 2 nuevos campos: \texttt{TPID:0x8100} y \texttt{TCI:0x0002}. \\
+
+De acuerdo a la información encontrada en la web (3), el campo \textbf{TPID} se refiere al identificador de protocolo de etiqueta; \textbf{TCI} se refiere a la información de control de etiqueta. \\
+
+Si queremos prohibir el trafico de la VLAN verde (VLAN 3) entre los switches, deberemos ingresar el siguiente comando descripto en la documentación de Cisco: \\\\
+\texttt{Switch(config-if)\# switchport trunk allowed vlan [all | none | add vlan-list | remove vlan-list | except vlan-list]} \\
+
+En nuestro caso, el comando seria: \\\\
+\texttt{Switch(config-if)\# switchport trunk allowed vlan remove 3} \\
+
+Al verificar el estado de la interfaz gigabitEthernet 0/1, veremos que las VLANs permitidas son todas menos la VLAN 3: \\\\
+\texttt{Trunking VLANs Enabled: 1-2,4-1005} \\
+
+Al enviar los PDUs entre maquinas de la VLAN 3 (verde) conectadas a distintos switches, observamos que el trafico no se ejecuta. \\
+
+\section{Port agregation}
+
+Al modificar el escenario con una segunda conexión de GigabitEthernet, vemos que los switches comienzan una nueva negociación entre ellos, quedando una de las interfaces momentáneamente bloqueada. \\
+
+Ingresamos los comandos indicados en el switch 0: \\\\
+\texttt{
+    Switch(config)\# interface range GigabitEthernet 0/1-2 \\
+    Switch(config-if-range)\# switchport trunk allowed vlan 2-3 \\
+    Switch(config-if-range)\# switchport mode trunk \\
+} \\
+
+Luego de ingresar el tercer comando, la terminal nos muestra lo siguiente: \\\\
+\texttt{
+    \%LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down \\\\
+    \%LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up \\\\
+    \%LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to down \\\\
+    \%LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to up \\
+} \\
+
+Finalmente, ingresamos el cuarto comando: \\\\
+\texttt{Switch(config-if-range)# channel-group 1 mode active} \\
+
+... tras lo cual la terminal nos mostrara la siguiente información: \\\\
+\texttt{
+    Switch(config-if-range)\# \\
+    Creating a port-channel interface Port-channel 1 \\\\
+    \%LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down \\\\
+    \%LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up \\\\
+    \%LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to down \\\\
+    \%LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to up \\
+} \\
+
+En el otro switch, ingresamos los comandos de forma similar, con la salvedad de que en el ultimo comando seteamos el modo a \texttt{passive}: \\\\
+\texttt{Switch(config-if-range)# channel-group 1 mode passive} \\
+
+La terminal nos mostrara la siguiente información: \\\\
+\texttt{
+Switch(config-if-range)#
+    Creating a port-channel interface Port-channel 1 \\\\
+    \%LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to down \\\\
+    \%LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/1, changed state to up \\\\
+    \%LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to down \\\\
+    \%LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to up \\\\
+    \%LINK-5-CHANGED: Interface Port-channel1, changed state to up \\\\
+    \%LINEPROTO-5-UPDOWN: Line protocol on Interface Port-channel1, changed state to up \\
+} \\
+
+A partir de esto, los switches negocian y los puertos pasan a estar en modo activo. \\
+
+Al ingresar el comando \texttt{show etherchannel summary}, nos muestra lo siguiente: \\\\\\\\\\
+\texttt{
+    Switch\# show etherchannel summary \\
+    \begin{tabular}{ l l l }
+     \multirow[t]{8}{*}{Flags:} & D - down & P - in port-channel \\
+     & I - stand-alone & s - suspended \\
+     & \multicolumn{2}{l}{H - Hot-standby (LACP only)} \\
+     & R - Layer3 & S - Layer2 \\
+     & U - in use & f - failed to allocate aggregator \\
+     & \multicolumn{2}{l}{u - unsuitable for bundling} \\
+     & \multicolumn{2}{l}{w - waiting to be aggregated} \\
+     & \multicolumn{2}{l}{d - default port} \\
+    \end{tabular}
+} \\\\\\\
+\texttt{
+    \begin{tabular}{ l l }
+        Number of channel-groups in use: & 1 \\
+	Number of aggregators: & 1 \\
+    \end{tabular}
+} \\\\\\
+\texttt{
+    \begin{tabular}{ l l l l }
+        Group & Port-channel & Protocol & Ports \\
+	\multicolumn{4}{l}{------+-------------+----------+----------------------------------------------} \\
+        1 & Po1(SU) & LACP & Gig0/1(P) Gig0/2(P) \\
+    \end{tabular}
+} \\
+
+Si ingresamos el comando \texttt{show etherchannel port-channel}, veremos lo siguiente: \\
+\texttt{
+    Switch\# show etherchannel port-channel \\\\
+    \begin{tabular}{ l l }
+         & Channel-group listing: \\
+         & ---------------------- \\
+        Group: 1 & \\
+        ---------- & \\
+         & Port-channels in the group: \\
+         & --------------------------- \\
+        Port-channel: Po1 & (Primary Aggregator) \\
+	------------ & \\
+    \end{tabular}
+} \\\\\\
+\texttt{
+    \begin{tabular}{ l l l }
+        Age of the Port-channel & = 00d:00h:08m:10s & \\
+	Logical slot/port & = 2/1 & Number of ports = 2 \\
+	GC & = 0x00000000 & HotStandBy port = null \\
+	Port state & = Port-channel \\
+	Protocol & =   LACP \\
+	Port Security & = Disabled \\
+    \end{tabular}
+} \\\\
+\texttt{
+    Ports in the Port-channel: \\\\
+    \begin{tabular}{ c c c c c }
+        Index & Load & Port & EC state & No of bits \\
+        \multicolumn{5}{l}{------+------+------+------------------+-----------} \\
+        0 & 00 & Gig0/1 & Passive & 0 \\
+	  0 & 00 & Gig0/2 & Passive & 0 \\
+    \end{tabular} \\
+    Time since last port bundled: \hfill 00d:00h:07m:49s \hfill Gig0/2 \\
+} \\
+
+De esta forma, constatamos que el port-channel se ha configurado correctamente. \\
+
+Al realizar las pruebas de envío de PDUs, comprobamos que las tramas de difusión e ICMP se envían correctamente a través de los puertos que conectan a ambos switches. \\
+
+Sin embargo, al deshabilitar uno de los puertos del switch 1 (el puerto GigabitEthernet 0/2) con los comandos: \\\\
+\texttt{
+    Switch(config)\# interface GigabitEthernet 0/2 \\
+    Switch(config-if)\# shutdown \\
+} \\
+
+\ldots observamos que el puerto correspondiente del otro switch también se deshabilita. La terminal nos muestra la siguiente leyenda: \\\\
+\texttt{
+    \%LINK-5-CHANGED: Interface GigabitEthernet0/2, changed state to administratively down \\\\
+    \%LINEPROTO-5-UPDOWN: Line protocol on Interface GigabitEthernet0/2, changed state to down \\\\
+}
+
+Al realizar nuevamente el envío de tramas, vemos que los switches transmiten a través de las otras interfaces, pudiendo constatar con el comando \texttt{show etherchannel port-channel} que el port-channel continua activo, aunque con 1 solo puerto por extremo: \\\\
+\texttt{
+    Switch\# show etherchannel port-channel \\\\
+    \begin{tabular}{ l l }
+         & Channel-group listing: \\
+         & ---------------------- \\
+        Group: 1 & \\
+        ---------- & \\
+         & Port-channels in the group: \\
+         & --------------------------- \\
+        Port-channel: Po1 & (Primary Aggregator) \\
+	------------ & \\
+    \end{tabular}
+} \\\\\\
+\texttt{
+    \begin{tabular}{ l l l }
+        Age of the Port-channel & = 00d:00h:17m:10s & \\
+	Logical slot/port & = 2/1 & Number of ports = 1 \\
+	GC & = 0x00000000 & HotStandBy port = null \\
+	Port state & = Port-channel \\
+	Protocol & =   LACP \\
+	Port Security & = Disabled \\
+    \end{tabular}
+} \\\\
+\texttt{
+    Ports in the Port-channel: \\\\
+    \begin{tabular}{ c c c c c }
+        Index & Load & Port & EC state & No of bits \\
+        \multicolumn{5}{l}{------+------+------+------------------+-----------} \\
+        0 & 00 & Gig0/1 & Passive & 0 \\
+    \end{tabular} \\
+    Time since last port bundled: \hfill 00d:00h:04m:22s \hfill Gig0/1 \\
+} \\
+
+\newpage
+\section{Referencias}
+\begin{itemize}
+    \item Fuente del documento: https://github.com/moro1982/tp-switches\_adm
+    \item https://www.cisco.com/c/es\_mx/support/docs/lan-switching/ethernet/12006-chapter22.html
+    \item https://community.cisco.com/t5/routing/difference-between-administrative-mode-operational-mode-in/td-p/1662249
+    \item https://www.sapalomera.cat/moodlecf/RS/2/course/module3/3.2.2.3/3.2.2.3.html
+    \item https://networklessons.com/switching/how-to-configure-trunk-on-cisco-catalyst-switch
+    \item https://community.fs.com/es/article/vlan-how-does-it-change-your-network-management.html
+\end{itemize} \\
+\end{document}
